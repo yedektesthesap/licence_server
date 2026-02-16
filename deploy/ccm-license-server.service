@@ -1,0 +1,18 @@
+[Unit]
+Description=CCM License Server
+After=network.target
+
+[Service]
+Type=simple
+User=ccm
+Group=ccm
+WorkingDirectory=/opt/ccm/licence_server
+EnvironmentFile=-/etc/default/ccm-license-server
+ExecStart=/opt/ccm/licence_server/.venv/bin/python -m app.main
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
