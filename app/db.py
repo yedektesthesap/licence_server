@@ -76,14 +76,22 @@ def insert_license(db_path: str, record: LicenseRecord) -> None:
 
 
 def disable_license(db_path: str, key: str) -> bool:
+    return _set_license_status(db_path, key, "disabled")
+
+
+def enable_license(db_path: str, key: str) -> bool:
+    return _set_license_status(db_path, key, "active")
+
+
+def _set_license_status(db_path: str, key: str, status: str) -> bool:
     with connect(db_path) as conn:
         cursor = conn.execute(
             """
             UPDATE licenses
-            SET status = 'disabled'
+            SET status = ?
             WHERE license_key = ?
             """,
-            (key,),
+            (status, key),
         )
         conn.commit()
 

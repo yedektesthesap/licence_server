@@ -12,8 +12,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 
-from app.db import disable_license, init_db, list_licenses
-from app.license_admin import create_license, format_license
+from app.db import disable_license, enable_license, init_db, list_licenses
+from app.license_admin import create_license, format_license, generate_unique_key
 from app.service import parse_rfc3339, utc_now
 from app.settings import get_settings
 
@@ -69,6 +69,7 @@ def dashboard(
     _: str = Depends(_require_admin),
     message: str | None = None,
     error: str | None = None,
+    key: str | None = None,
 ) -> HTMLResponse:
     settings = get_settings()
     init_db(settings.db_path)
@@ -84,6 +85,9 @@ def dashboard(
         payload["disable_action"] = str(
             request.url_for("admin_disable_license", license_key=record.license_key)
         )
+        payload["enable_action"] = str(
+            request.url_for("admin_enable_license", license_key=record.license_key)
+        )
         rows.append(payload)
 
     return templates.TemplateResponse(
@@ -93,7 +97,9 @@ def dashboard(
             "licenses": rows,
             "message": message,
             "error": error,
+            "generated_key": key or "",
             "create_action": str(request.url_for("admin_create_license")),
+            "generate_key_action": str(request.url_for("admin_generate_key")),
             "token_ttl_seconds": settings.token_ttl_seconds,
             "db_path": settings.db_path,
         },
@@ -152,3 +158,35 @@ def disable_license_view(
         return _redirect_to_dashboard(request, error=f"License key not found: {license_key}")
 
     return _redirect_to_dashboard(request, message=f"License disabled: {license_key}")
+
+
+@router.post("/licenses/{license_key}/enable", name="admin_enable_license")
+def enable_license_view(
+    request: Request,
+    license_key: str,
+    _: str = Depends(_require_admin),
+) -> RedirectResponse:
+    settings = get_settings()
+    init_db(settings.db_path)
+
+    if not enable_license(settings.db_path, license_key):
+        return _redirect_to_dashboard(request, error=f"License key not found: {license_key}")
+
+    return _redirect_to_dashboard(request, message=f"License enabled: {license_key}")
+
+
+@router.post("/licenses/generate-key", name="admin_generate_key")
+def generate_key_view(
+    request: Request,
+    _: str = Depends(_require_admin),
+) -> RedirectResponse:
+    settings = get_settings()
+    init_db(settings.db_path)
+    key = generate_unique_key(settings.db_path)
+    return _redirect_to_dashboard_with_key(request, key)
+
+
+def _redirect_to_dashboard_with_key(request: Request, key: str) -> RedirectResponse:
+    base_url = str(request.url_for("admin_dashboard"))
+    query = urlencode({"key": key, "message": "License key generated."})
+    return RedirectResponse(url=f"{base_url}?{query}", status_code=status.HTTP_303_SEE_OTHER)

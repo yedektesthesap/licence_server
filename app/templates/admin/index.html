@@ -32,13 +32,14 @@
           </label>
           <label>
             License Key (optional)
-            <input type="text" name="key" placeholder="ABCD-EFGH-JKLM" />
+            <input type="text" name="key" value="{{ generated_key }}" placeholder="ABCD-EFGH-JKLM" />
           </label>
           <label>
             Note (optional)
             <input type="text" name="note" placeholder="trial, customer name, etc." />
           </label>
           <button type="submit">Create</button>
+          <button type="submit" formaction="{{ generate_key_action }}" formnovalidate class="secondary">Generate Key</button>
         </form>
       </section>
 
@@ -86,7 +87,9 @@
                       <button type="submit" class="danger">Disable</button>
                     </form>
                     {% else %}
-                    <span class="muted">Disabled</span>
+                    <form method="post" action="{{ item.enable_action }}">
+                      <button type="submit" class="success">Enable</button>
+                    </form>
                     {% endif %}
                   </td>
                 </tr>

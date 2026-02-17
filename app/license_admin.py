@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import random
 import sqlite3
+import secrets
 from datetime import timedelta
 from typing import Any
 
-from app.db import insert_license
+from app.db import get_license, insert_license
 from app.models import LicenseRecord
 from app.service import parse_rfc3339, to_rfc3339, utc_now
 
@@ -31,9 +31,17 @@ def format_license(record: LicenseRecord) -> dict[str, Any]:
 def generate_key() -> str:
     segments: list[str] = []
     for _ in range(KEY_SEGMENTS):
-        segment = "".join(random.choice(KEY_ALPHABET) for _ in range(KEY_SEGMENT_LENGTH))
+        segment = "".join(secrets.choice(KEY_ALPHABET) for _ in range(KEY_SEGMENT_LENGTH))
         segments.append(segment)
     return "-".join(segments)
+
+
+def generate_unique_key(db_path: str) -> str:
+    for _ in range(KEY_GENERATION_ATTEMPTS):
+        candidate_key = generate_key()
+        if get_license(db_path, candidate_key) is None:
+            return candidate_key
+    raise RuntimeError("Failed to generate a unique license key")
 
 
 def create_license(

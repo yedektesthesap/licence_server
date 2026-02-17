@@ -117,7 +117,7 @@ body {
 .create-form {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto auto;
   align-items: end;
 }
 
@@ -160,6 +160,15 @@ button:hover {
 
 button.danger {
   background: linear-gradient(135deg, #8a2f22, #b53f2d);
+}
+
+button.success {
+  background: linear-gradient(135deg, #246c43, #2f9256);
+}
+
+button.secondary {
+  color: #143b6b;
+  background: linear-gradient(135deg, #e2edf9, #cddff2);
 }
 
 .panel-title {

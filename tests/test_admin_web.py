@@ -51,7 +51,7 @@ def test_admin_dashboard_lists_licenses(client: TestClient, db_path: str) -> Non
     assert "demo" in response.text
 
 
-def test_admin_create_and_disable_license(client: TestClient, db_path: str) -> None:
+def test_admin_create_disable_and_enable_license(client: TestClient, db_path: str) -> None:
     create_response = client.post(
         "/admin/licenses",
         auth=("admin", "secret-pass"),
@@ -76,3 +76,29 @@ def test_admin_create_and_disable_license(client: TestClient, db_path: str) -> N
     updated = get_license(db_path, created_key)
     assert updated is not None
     assert updated.status == "disabled"
+
+    enable_response = client.post(
+        f"/admin/licenses/{created_key}/enable",
+        auth=("admin", "secret-pass"),
+        follow_redirects=False,
+    )
+    assert enable_response.status_code == 303
+
+    reenabled = get_license(db_path, created_key)
+    assert reenabled is not None
+    assert reenabled.status == "active"
+
+
+def test_admin_generate_key_prefills_form(client: TestClient) -> None:
+    response = client.post(
+        "/admin/licenses/generate-key",
+        auth=("admin", "secret-pass"),
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    location = response.headers["location"]
+    assert "key=" in location
+
+    dashboard = client.get(location, auth=("admin", "secret-pass"))
+    assert dashboard.status_code == 200
+    assert 'name="key"' in dashboard.text

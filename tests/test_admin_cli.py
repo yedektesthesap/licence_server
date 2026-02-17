@@ -24,7 +24,7 @@ def run_cli(args: list[str], env: dict[str, str]) -> subprocess.CompletedProcess
     )
 
 
-def test_create_license_and_disable(tmp_path) -> None:
+def test_create_license_disable_and_enable(tmp_path) -> None:
     db_path = tmp_path / "licenses.db"
     env = os.environ.copy()
     env["DB_PATH"] = str(db_path)
@@ -52,6 +52,13 @@ def test_create_license_and_disable(tmp_path) -> None:
     disabled_record = get_license(str(db_path), payload["license_key"])
     assert disabled_record is not None
     assert disabled_record.status == "disabled"
+
+    enable_result = run_cli(["enable-license", "--key", payload["license_key"]], env)
+    assert enable_result.returncode == 0, enable_result.stderr
+
+    reenabled_record = get_license(str(db_path), payload["license_key"])
+    assert reenabled_record is not None
+    assert reenabled_record.status == "active"
 
 
 def test_list_and_show_license(tmp_path) -> None:
@@ -88,3 +95,15 @@ def test_disable_missing_license_returns_non_zero(tmp_path) -> None:
     result = run_cli(["disable-license", "--key", "MISS-ING1-KEY2"], env)
     assert result.returncode != 0
     assert "not found" in result.stderr.lower()
+
+
+def test_generate_key_returns_valid_format(tmp_path) -> None:
+    db_path = tmp_path / "licenses.db"
+    env = os.environ.copy()
+    env["DB_PATH"] = str(db_path)
+
+    result = run_cli(["generate-key"], env)
+    assert result.returncode == 0, result.stderr
+
+    payload = json.loads(result.stdout)
+    assert re.fullmatch(r"[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}", payload["license_key"])

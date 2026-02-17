@@ -6,8 +6,8 @@ import sqlite3
 import sys
 from typing import Any
 
-from app.db import disable_license, get_license, init_db, list_licenses
-from app.license_admin import create_license, format_license
+from app.db import disable_license, enable_license, get_license, init_db, list_licenses
+from app.license_admin import create_license, format_license, generate_unique_key
 from app.settings import get_settings
 
 def _print_json(data: Any) -> None:
@@ -53,6 +53,26 @@ def _handle_disable_license(args: argparse.Namespace) -> int:
     return 0
 
 
+def _handle_enable_license(args: argparse.Namespace) -> int:
+    settings = get_settings()
+    init_db(settings.db_path)
+
+    updated = enable_license(settings.db_path, args.key)
+    if not updated:
+        print(f"License key not found: {args.key}", file=sys.stderr)
+        return 1
+
+    _print_json({"license_key": args.key, "status": "active"})
+    return 0
+
+
+def _handle_generate_key(_: argparse.Namespace) -> int:
+    settings = get_settings()
+    init_db(settings.db_path)
+    _print_json({"license_key": generate_unique_key(settings.db_path)})
+    return 0
+
+
 def _handle_list_licenses(_: argparse.Namespace) -> int:
     settings = get_settings()
     init_db(settings.db_path)
@@ -89,6 +109,13 @@ def build_parser() -> argparse.ArgumentParser:
     disable_parser = subparsers.add_parser("disable-license")
     disable_parser.add_argument("--key", type=str, required=True)
     disable_parser.set_defaults(handler=_handle_disable_license)
+
+    enable_parser = subparsers.add_parser("enable-license")
+    enable_parser.add_argument("--key", type=str, required=True)
+    enable_parser.set_defaults(handler=_handle_enable_license)
+
+    generate_parser = subparsers.add_parser("generate-key")
+    generate_parser.set_defaults(handler=_handle_generate_key)
 
     list_parser = subparsers.add_parser("list-licenses")
     list_parser.set_defaults(handler=_handle_list_licenses)

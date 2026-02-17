@@ -51,6 +51,18 @@ Disable license:
 python -m app.admin disable-license --key ABCD-EFGH-JKLM
 ```
 
+Enable (reactivate) license:
+
+```bash
+python -m app.admin enable-license --key ABCD-EFGH-JKLM
+```
+
+Generate license key:
+
+```bash
+python -m app.admin generate-key
+```
+
 List licenses:
 
 ```bash
@@ -120,7 +132,9 @@ Admin UI path:
 Capabilities:
 
 - Create license
+- Generate license key
 - Disable license
+- Enable (reactivate) disabled license
 - List all licenses
 
 PowerShell example:
