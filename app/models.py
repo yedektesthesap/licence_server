@@ -31,12 +31,21 @@ class LeaseInfo(BaseModel):
     expires_at: str
 
 
+class RemainingTimeInfo(BaseModel):
+    years: int = Field(ge=0)
+    months: int = Field(ge=0)
+    days: int = Field(ge=0)
+    hours: int = Field(ge=0)
+    minutes: int = Field(ge=0)
+    seconds: int = Field(ge=0)
+
+
 class LicenseInfo(BaseModel):
     license_key: str = Field(min_length=1)
     issued_at: str
     duration_days: int = Field(ge=1)
     license_expires_at: str
-    days_left: int = Field(ge=0)
+    remaining_time: RemainingTimeInfo
 
 
 class TokenAllowedResponse(BaseModel):

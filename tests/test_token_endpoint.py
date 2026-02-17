@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.db import init_db, insert_license
 from app.models import LicenseRecord
-from app.service import parse_rfc3339, to_rfc3339, utc_now
+from app.service import format_remaining_time, parse_rfc3339, split_remaining_time, to_rfc3339, utc_now
 
 
 @pytest.fixture()
@@ -70,7 +70,19 @@ def test_token_allows_active_license(client: TestClient, db_path: str) -> None:
     assert payload["token_ttl_seconds"] == 86400
     assert payload["license"]["license_key"] == "ABCD-EFGH-JKLM"
     assert payload["license"]["duration_days"] == 30
-    assert payload["license"]["days_left"] >= 28
+    assert set(payload["license"]["remaining_time"]) == {
+        "years",
+        "months",
+        "days",
+        "hours",
+        "minutes",
+        "seconds",
+    }
+    assert any(value > 0 for value in payload["license"]["remaining_time"].values())
+    assert payload["license"]["remaining_time"] == split_remaining_time(
+        parse_rfc3339(payload["server_time"]),
+        parse_rfc3339(payload["license"]["license_expires_at"]),
+    )
     assert payload["server_time"].endswith("Z")
 
     lease_issued_at = parse_rfc3339(payload["lease"]["issued_at"])
@@ -133,7 +145,7 @@ def test_token_denies_unknown_license(client: TestClient) -> None:
     assert payload["server_time"].endswith("Z")
 
 
-def test_days_left_floor_and_min_zero(client: TestClient, db_path: str) -> None:
+def test_remaining_time_components_and_min_zero(client: TestClient, db_path: str) -> None:
     seed_license(
         db_path,
         license_key="FLOO-RDAY-SLFT",
@@ -147,5 +159,42 @@ def test_days_left_floor_and_min_zero(client: TestClient, db_path: str) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["allowed"] is True
-    assert payload["license"]["days_left"] == 0
-    assert payload["license"]["days_left"] >= 0
+    remaining_time = payload["license"]["remaining_time"]
+    assert remaining_time["years"] == 0
+    assert remaining_time["months"] == 0
+    assert remaining_time["days"] == 0
+    assert all(value >= 0 for value in remaining_time.values())
+    assert (
+        remaining_time["hours"] > 0
+        or remaining_time["minutes"] > 0
+        or remaining_time["seconds"] > 0
+    )
+
+
+def test_format_remaining_time_omits_zero_components() -> None:
+    assert (
+        format_remaining_time(
+            {
+                "years": 0,
+                "months": 0,
+                "days": 17,
+                "hours": 4,
+                "minutes": 0,
+                "seconds": 9,
+            }
+        )
+        == "17d 4h 9s"
+    )
+    assert (
+        format_remaining_time(
+            {
+                "years": 0,
+                "months": 0,
+                "days": 0,
+                "hours": 0,
+                "minutes": 0,
+                "seconds": 0,
+            }
+        )
+        == "0s"
+    )

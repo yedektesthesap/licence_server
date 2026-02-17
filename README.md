@@ -106,7 +106,14 @@ Allowed response example:
     "issued_at": "2026-02-01T00:00:00Z",
     "duration_days": 30,
     "license_expires_at": "2026-03-03T00:00:00Z",
-    "days_left": 17
+    "remaining_time": {
+      "years": 0,
+      "months": 0,
+      "days": 17,
+      "hours": 0,
+      "minutes": 0,
+      "seconds": 0
+    }
   },
   "token_ttl_seconds": 86400,
   "server_time": "2026-02-13T15:00:00Z"

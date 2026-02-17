@@ -1,6 +1,6 @@
 ﻿from __future__ import annotations
 
-import math
+import calendar
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -27,6 +27,79 @@ def parse_rfc3339(value: str) -> datetime:
         raise ValueError("Timestamp must include timezone information")
 
     return parsed.astimezone(timezone.utc)
+
+
+def _add_months(value: datetime, months: int) -> datetime:
+    if months < 0:
+        raise ValueError("months must be >= 0")
+
+    year_offset, month_index = divmod((value.month - 1) + months, 12)
+    year = value.year + year_offset
+    month = month_index + 1
+    day = min(value.day, calendar.monthrange(year, month)[1])
+    return value.replace(year=year, month=month, day=day)
+
+
+def split_remaining_time(now: datetime, expires_at: datetime) -> dict[str, int]:
+    if expires_at <= now:
+        return {
+            "years": 0,
+            "months": 0,
+            "days": 0,
+            "hours": 0,
+            "minutes": 0,
+            "seconds": 0,
+        }
+
+    cursor = now
+    years = 0
+    while True:
+        next_cursor = _add_months(cursor, 12)
+        if next_cursor > expires_at:
+            break
+        years += 1
+        cursor = next_cursor
+
+    months = 0
+    while True:
+        next_cursor = _add_months(cursor, 1)
+        if next_cursor > expires_at:
+            break
+        months += 1
+        cursor = next_cursor
+
+    remaining_seconds = max(0, int((expires_at - cursor).total_seconds()))
+    days, remainder = divmod(remaining_seconds, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, seconds = divmod(remainder, 60)
+
+    return {
+        "years": years,
+        "months": months,
+        "days": days,
+        "hours": hours,
+        "minutes": minutes,
+        "seconds": seconds,
+    }
+
+
+def format_remaining_time(remaining_time: dict[str, int]) -> str:
+    parts: list[str] = []
+    units = (
+        ("years", "y"),
+        ("months", "mo"),
+        ("days", "d"),
+        ("hours", "h"),
+        ("minutes", "m"),
+        ("seconds", "s"),
+    )
+
+    for key, suffix in units:
+        value = int(remaining_time.get(key, 0))
+        if value > 0:
+            parts.append(f"{value}{suffix}")
+
+    return " ".join(parts) if parts else "0s"
 
 
 def _denied(reason: DeniedReason, now: datetime) -> TokenDeniedResponse:
@@ -61,8 +134,7 @@ def issue_token(
 
     lease_issued_at = now
     lease_expires_at = lease_issued_at + timedelta(seconds=token_ttl_seconds)
-    days_remaining_seconds = (license_expires_dt - now).total_seconds()
-    days_left = max(0, math.floor(days_remaining_seconds / 86400))
+    remaining_time = split_remaining_time(now, license_expires_dt)
 
     return TokenAllowedResponse(
         allowed=True,
@@ -76,7 +148,7 @@ def issue_token(
             issued_at=to_rfc3339(issued_at),
             duration_days=record.duration_days,
             license_expires_at=to_rfc3339(license_expires_dt),
-            days_left=days_left,
+            remaining_time=remaining_time,
         ),
         token_ttl_seconds=token_ttl_seconds,
         server_time=to_rfc3339(now),

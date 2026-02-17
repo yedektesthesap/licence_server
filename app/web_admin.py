@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import secrets
 import sqlite3
 from datetime import timedelta
@@ -14,7 +13,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.db import disable_license, enable_license, init_db, list_licenses
 from app.license_admin import create_license, format_license, generate_unique_key
-from app.service import parse_rfc3339, utc_now
+from app.service import format_remaining_time, parse_rfc3339, split_remaining_time, utc_now
 from app.settings import get_settings
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -79,8 +78,9 @@ def dashboard(
     for record in list_licenses(settings.db_path):
         payload = format_license(record)
         expires_at = parse_rfc3339(payload["license_expires_at"])
-        days_remaining_seconds = max(0, (expires_at - now).total_seconds())
-        payload["days_left"] = int(math.floor(days_remaining_seconds / 86400))
+        remaining_time = split_remaining_time(now, expires_at)
+        payload["remaining_time"] = remaining_time
+        payload["remaining_time_label"] = format_remaining_time(remaining_time)
         payload["is_expired"] = now >= expires_at
         payload["disable_action"] = str(
             request.url_for("admin_disable_license", license_key=record.license_key)
