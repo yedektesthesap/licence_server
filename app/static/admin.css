@@ -260,6 +260,40 @@ button.secondary {
   color: var(--muted);
 }
 
+.remaining-time-cell {
+  min-width: 150px;
+}
+
+.remaining-time-trigger {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.remaining-time-trigger:hover {
+  text-decoration: underline;
+}
+
+.remaining-time-trigger.is-expired {
+  color: #8f3122;
+  font-weight: 700;
+}
+
+.remaining-edit-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.remaining-edit-input {
+  width: 84px;
+  padding: 7px 8px;
+}
+
 .panel-title {
   display: flex;
   justify-content: space-between;

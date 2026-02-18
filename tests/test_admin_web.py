@@ -128,9 +128,10 @@ def test_admin_licenses_endpoint_marks_expired_as_enable_action(
     assert item["display_status"] == "disabled"
     assert item["action_mode"] == "enable"
     assert item["requires_duration"] is True
+    assert item["update_remaining_action"].endswith(f"/admin/licenses/{expired_key}/remaining-time")
 
 
-def test_admin_dashboard_renders_expired_enable_picker_as_hidden(
+def test_admin_dashboard_renders_remaining_time_editor_trigger(
     client: TestClient, db_path: str
 ) -> None:
     insert_license(
@@ -146,12 +147,13 @@ def test_admin_dashboard_renders_expired_enable_picker_as_hidden(
 
     response = client.get("/admin", auth=("admin", "secret-pass"))
     assert response.status_code == 200
+    assert "remaining-time-trigger is-expired" in response.text
+    assert f'data-update-action="http://testserver/admin/licenses/EXPD-TEST-0003/remaining-time"' in response.text
     assert 'data-requires-duration="1"' in response.text
-    assert 'data-days-selected="0"' in response.text
-    assert "duration-picker\" hidden" in response.text
+    assert "duration-picker" not in response.text
 
 
-def test_admin_enable_expired_license_requires_days_and_reactivates(
+def test_admin_update_remaining_time_then_enable_expired_license(
     client: TestClient, db_path: str
 ) -> None:
     expired_key = "EXPD-TEST-0002"
@@ -162,33 +164,45 @@ def test_admin_enable_expired_license_requires_days_and_reactivates(
             license_key=expired_key,
             issued_at=original_issued_at,
             duration_days=1,
-            status="active",
+            status="disabled",
             note="expired",
         ),
     )
 
-    missing_days = client.post(
+    blocked_enable = client.post(
         f"/admin/licenses/{expired_key}/enable",
         auth=("admin", "secret-pass"),
         follow_redirects=False,
     )
-    assert missing_days.status_code == 303
+    assert blocked_enable.status_code == 303
 
     unchanged = get_license(db_path, expired_key)
     assert unchanged is not None
+    assert unchanged.status == "disabled"
     assert unchanged.duration_days == 1
     assert unchanged.issued_at == original_issued_at
 
-    reactivate = client.post(
-        f"/admin/licenses/{expired_key}/enable",
+    update_remaining = client.post(
+        f"/admin/licenses/{expired_key}/remaining-time",
         auth=("admin", "secret-pass"),
         data={"days": "30"},
-        follow_redirects=False,
     )
-    assert reactivate.status_code == 303
+    assert update_remaining.status_code == 200
+    assert update_remaining.json()["ok"] is True
 
     updated = get_license(db_path, expired_key)
     assert updated is not None
-    assert updated.status == "active"
+    assert updated.status == "disabled"
     assert updated.duration_days == 30
     assert parse_rfc3339(updated.issued_at) > parse_rfc3339(original_issued_at)
+
+    enable_response = client.post(
+        f"/admin/licenses/{expired_key}/enable",
+        auth=("admin", "secret-pass"),
+        follow_redirects=False,
+    )
+    assert enable_response.status_code == 303
+
+    enabled = get_license(db_path, expired_key)
+    assert enabled is not None
+    assert enabled.status == "active"

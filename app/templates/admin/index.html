@@ -67,12 +67,23 @@
                   </td>
                   <td class="mono">{{ item.issued_at }}</td>
                   <td class="mono">{{ item.license_expires_at }}</td>
-                  <td>
-                    {% if item.is_expired %}
-                      <span class="expired">expired</span>
-                    {% else %}
-                      {{ item.remaining_time_label }}
-                    {% endif %}
+                  <td
+                    class="remaining-time-cell"
+                    data-license-key="{{ item.license_key }}"
+                    data-update-action="{{ item.update_remaining_action }}"
+                    data-default-days="{{ item.duration_days }}"
+                  >
+                    <button
+                      type="button"
+                      class="remaining-time-trigger{% if item.is_expired %} is-expired{% endif %}"
+                      title="Set remaining days"
+                    >
+                      {% if item.is_expired %}
+                        expired
+                      {% else %}
+                        {{ item.remaining_time_label }}
+                      {% endif %}
+                    </button>
                   </td>
                   <td>{{ item.note or "-" }}</td>
                   <td>
@@ -86,21 +97,7 @@
                       action="{{ item.enable_action }}"
                       class="action-form"
                       data-requires-duration="{{ 1 if item.requires_duration else 0 }}"
-                      data-days-selected="0"
                     >
-                      {% if item.requires_duration %}
-                      <span class="duration-picker" hidden>
-                        <input
-                          type="number"
-                          name="days"
-                          min="1"
-                          value="{{ item.duration_days }}"
-                          class="duration-input"
-                          title="Renew duration (days)"
-                        />
-                        <span class="duration-suffix">days</span>
-                      </span>
-                      {% endif %}
                       <button type="submit" class="success">Enable</button>
                     </form>
                     {% endif %}
@@ -185,27 +182,6 @@
         } else {
           form.action = item.enable_action;
           form.dataset.requiresDuration = item.requires_duration ? "1" : "0";
-          form.dataset.daysSelected = "0";
-          if (item.requires_duration) {
-            const durationPicker = document.createElement("span");
-            durationPicker.className = "duration-picker";
-            durationPicker.hidden = true;
-
-            const daysInput = document.createElement("input");
-            daysInput.type = "number";
-            daysInput.name = "days";
-            daysInput.min = "1";
-            daysInput.value = String(item.duration_days);
-            daysInput.className = "duration-input";
-            daysInput.title = "Renew duration (days)";
-            durationPicker.appendChild(daysInput);
-
-            const suffix = document.createElement("span");
-            suffix.className = "duration-suffix";
-            suffix.textContent = "days";
-            durationPicker.appendChild(suffix);
-            form.appendChild(durationPicker);
-          }
 
           const button = document.createElement("button");
           button.type = "submit";
@@ -216,6 +192,29 @@
 
         actionCell.appendChild(form);
         return actionCell;
+      }
+
+      function buildRemainingCell(item) {
+        const remainingCell = document.createElement("td");
+        remainingCell.className = "remaining-time-cell";
+        remainingCell.dataset.licenseKey = item.license_key;
+        remainingCell.dataset.updateAction = item.update_remaining_action;
+        remainingCell.dataset.defaultDays = String(item.duration_days);
+
+        const trigger = document.createElement("button");
+        trigger.type = "button";
+        trigger.className = "remaining-time-trigger";
+        trigger.title = "Set remaining days";
+
+        if (item.is_expired) {
+          trigger.classList.add("is-expired");
+          trigger.textContent = "expired";
+        } else {
+          trigger.textContent = item.remaining_time_label;
+        }
+
+        remainingCell.appendChild(trigger);
+        return remainingCell;
       }
 
       function buildRow(item) {
@@ -231,17 +230,7 @@
 
         row.appendChild(createCell(item.issued_at, "mono"));
         row.appendChild(createCell(item.license_expires_at, "mono"));
-
-        const remainingCell = document.createElement("td");
-        if (item.is_expired) {
-          const expired = document.createElement("span");
-          expired.className = "expired";
-          expired.textContent = "expired";
-          remainingCell.appendChild(expired);
-        } else {
-          remainingCell.textContent = item.remaining_time_label;
-        }
-        row.appendChild(remainingCell);
+        row.appendChild(buildRemainingCell(item));
 
         row.appendChild(createCell(item.note || "-"));
         row.appendChild(buildActionCell(item));
@@ -258,81 +247,143 @@
         return row;
       }
 
-      function openDurationPicker(form) {
-        const picker = form.querySelector(".duration-picker");
-        const daysInput = form.querySelector("input[name='days']");
-        if (!picker || !daysInput) {
-          return;
-        }
-
-        picker.hidden = false;
-        form.classList.add("duration-open");
-        daysInput.focus();
-        daysInput.select();
-      }
-
-      function closeDurationPicker(form) {
-        const picker = form.querySelector(".duration-picker");
-        if (!picker) {
-          return;
-        }
-
-        picker.hidden = true;
-        form.classList.remove("duration-open");
-      }
-
-      function normalizeDurationValue(form) {
-        const daysInput = form.querySelector("input[name='days']");
-        if (!daysInput) {
-          return null;
-        }
-
-        const parsed = Number.parseInt(daysInput.value, 10);
+      function parseDays(rawValue) {
+        const parsed = Number.parseInt(String(rawValue), 10);
         if (!Number.isFinite(parsed) || parsed < 1) {
           return null;
         }
-
-        daysInput.value = String(parsed);
         return parsed;
+      }
+
+      async function saveRemainingDays(cell, days) {
+        const updateAction = cell.dataset.updateAction;
+        const licenseKey = cell.dataset.licenseKey || "";
+        if (!updateAction) {
+          showToast("Remaining time update action is missing.", "error");
+          return false;
+        }
+
+        const payload = new FormData();
+        payload.append("days", String(days));
+
+        try {
+          const response = await fetch(updateAction, {
+            method: "POST",
+            credentials: "same-origin",
+            body: payload,
+          });
+          const data = await response.json().catch(() => ({}));
+
+          if (!response.ok || data.ok === false) {
+            showToast(data.error || "Remaining time update failed.", "error");
+            return false;
+          }
+
+          cell.dataset.defaultDays = String(days);
+          showToast(data.message || `Remaining time updated: ${licenseKey}`, "success");
+          await refreshLicenses();
+          return true;
+        } catch (_) {
+          showToast("Remaining time update failed.", "error");
+          return false;
+        }
+      }
+
+      function openRemainingEditor(cell) {
+        if (cell.dataset.editing === "1") {
+          return;
+        }
+
+        const trigger = cell.querySelector(".remaining-time-trigger");
+        if (!(trigger instanceof HTMLButtonElement)) {
+          return;
+        }
+
+        const defaultDays = parseDays(cell.dataset.defaultDays) || 1;
+        cell.dataset.editing = "1";
+        trigger.hidden = true;
+
+        const form = document.createElement("form");
+        form.className = "remaining-edit-form";
+
+        const input = document.createElement("input");
+        input.type = "number";
+        input.name = "days";
+        input.min = "1";
+        input.required = true;
+        input.value = String(defaultDays);
+        input.className = "remaining-edit-input";
+        input.setAttribute("aria-label", "Remaining days");
+        form.appendChild(input);
+
+        const suffix = document.createElement("span");
+        suffix.className = "duration-suffix";
+        suffix.textContent = "days";
+        form.appendChild(suffix);
+
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const days = parseDays(input.value);
+          if (days === null) {
+            showToast("Days must be >= 1.", "error");
+            input.focus();
+            input.select();
+            return;
+          }
+
+          const ok = await saveRemainingDays(cell, days);
+          if (!ok) {
+            input.focus();
+            input.select();
+          }
+        });
+
+        input.addEventListener("keydown", (event) => {
+          if (event.key !== "Escape") {
+            return;
+          }
+
+          event.preventDefault();
+          form.remove();
+          trigger.hidden = false;
+          cell.dataset.editing = "0";
+        });
+
+        cell.appendChild(form);
+        input.focus();
+        input.select();
       }
 
       licensesTableBody.addEventListener("submit", (event) => {
         const form = event.target;
-        if (!(form instanceof HTMLFormElement)) {
+        if (!(form instanceof HTMLFormElement) || !form.classList.contains("action-form")) {
           return;
         }
         if (form.dataset.requiresDuration !== "1") {
           return;
         }
 
-        const selectedDays = normalizeDurationValue(form);
-        if (form.dataset.daysSelected === "1" && selectedDays !== null) {
-          return;
-        }
-
         event.preventDefault();
-        openDurationPicker(form);
+        showToast("Lisans expired. Once Remaining Time sutununu guncelleyin.", "error");
       });
 
-      licensesTableBody.addEventListener("change", (event) => {
+      licensesTableBody.addEventListener("click", (event) => {
         const target = event.target;
-        if (!(target instanceof HTMLInputElement) || target.name !== "days") {
+        if (!(target instanceof HTMLElement)) {
           return;
         }
 
-        const form = target.form;
-        if (!(form instanceof HTMLFormElement) || form.dataset.requiresDuration !== "1") {
+        const trigger = target.closest(".remaining-time-trigger");
+        if (!(trigger instanceof HTMLButtonElement)) {
           return;
         }
 
-        const selectedDays = normalizeDurationValue(form);
-        if (selectedDays === null) {
+        const cell = trigger.closest(".remaining-time-cell");
+        if (!(cell instanceof HTMLTableCellElement)) {
           return;
         }
 
-        form.dataset.daysSelected = "1";
-        closeDurationPicker(form);
-        form.requestSubmit();
+        openRemainingEditor(cell);
       });
 
       async function refreshLicenses() {

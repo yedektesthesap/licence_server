@@ -8,11 +8,19 @@ from typing import Any
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 
-from app.db import disable_license, enable_license, get_license, init_db, list_licenses, reactivate_license
+from app.db import (
+    disable_license,
+    enable_license,
+    get_license,
+    init_db,
+    list_licenses,
+    reactivate_license,
+    update_license_duration,
+)
 from app.license_admin import create_license, format_license, generate_unique_key
 from app.service import format_remaining_time, parse_rfc3339, split_remaining_time, to_rfc3339, utc_now
 from app.settings import get_settings
@@ -85,6 +93,9 @@ def _build_license_rows(request: Request, db_path: str) -> list[dict[str, Any]]:
         )
         payload["enable_action"] = str(
             request.url_for("admin_enable_license", license_key=record.license_key)
+        )
+        payload["update_remaining_action"] = str(
+            request.url_for("admin_update_remaining_time", license_key=record.license_key)
         )
         rows.append(payload)
 
@@ -235,6 +246,61 @@ def enable_license_view(
         return _redirect_to_dashboard(request, error=f"License key not found: {license_key}")
 
     return _redirect_to_dashboard(request, message=f"License enabled: {license_key}")
+
+
+@router.post("/licenses/{license_key}/remaining-time", name="admin_update_remaining_time")
+def update_remaining_time_view(
+    license_key: str,
+    days: str | None = Form(default=None),
+    _: str = Depends(_require_admin),
+) -> JSONResponse:
+    settings = get_settings()
+    init_db(settings.db_path)
+
+    if get_license(settings.db_path, license_key) is None:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"ok": False, "error": f"License key not found: {license_key}"},
+        )
+
+    days_raw = (days or "").strip()
+    if not days_raw:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"ok": False, "error": "Days is required."},
+        )
+
+    try:
+        duration_days = int(days_raw)
+    except ValueError:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"ok": False, "error": "Days must be an integer."},
+        )
+
+    if duration_days < 1:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"ok": False, "error": "Days must be >= 1."},
+        )
+
+    if not update_license_duration(
+        settings.db_path,
+        license_key,
+        issued_at=to_rfc3339(utc_now()),
+        duration_days=duration_days,
+    ):
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"ok": False, "error": f"License key not found: {license_key}"},
+        )
+
+    return JSONResponse(
+        content={
+            "ok": True,
+            "message": f"Remaining time updated to {duration_days} day(s): {license_key}",
+        }
+    )
 
 
 @router.post("/licenses/generate-key", name="admin_generate_key")
