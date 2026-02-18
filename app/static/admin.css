@@ -100,6 +100,68 @@ body {
   border-color: #dba39a;
 }
 
+.toast-stack {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 20;
+  display: grid;
+  gap: 10px;
+  width: min(420px, calc(100vw - 24px));
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  padding: 10px 12px;
+  box-shadow: 0 12px 24px rgba(24, 41, 64, 0.2);
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 180ms ease, transform 180ms ease;
+  pointer-events: auto;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.toast-success {
+  background: #deefe5;
+  color: #1f5f3d;
+  border-color: #9ec8ae;
+}
+
+.toast-error {
+  background: #f5dfda;
+  color: #8f3a2f;
+  border-color: #dba39a;
+}
+
+.toast-body {
+  font-size: 0.92rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.toast-close {
+  border: 0;
+  border-radius: 8px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  line-height: 1;
+  font-size: 0.9rem;
+  cursor: pointer;
+  background: rgba(24, 41, 64, 0.12);
+  color: inherit;
+}
+
 .panel {
   background: var(--panel);
   backdrop-filter: blur(4px);
@@ -185,6 +247,12 @@ button.secondary {
 .duration-input {
   width: 84px;
   padding: 7px 8px;
+}
+
+.duration-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .duration-suffix {

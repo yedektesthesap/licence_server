@@ -130,6 +130,27 @@ def test_admin_licenses_endpoint_marks_expired_as_enable_action(
     assert item["requires_duration"] is True
 
 
+def test_admin_dashboard_renders_expired_enable_picker_as_hidden(
+    client: TestClient, db_path: str
+) -> None:
+    insert_license(
+        db_path,
+        LicenseRecord(
+            license_key="EXPD-TEST-0003",
+            issued_at=to_rfc3339(utc_now() - timedelta(days=10)),
+            duration_days=1,
+            status="active",
+            note="expired-ui",
+        ),
+    )
+
+    response = client.get("/admin", auth=("admin", "secret-pass"))
+    assert response.status_code == 200
+    assert 'data-requires-duration="1"' in response.text
+    assert 'data-days-selected="0"' in response.text
+    assert "duration-picker\" hidden" in response.text
+
+
 def test_admin_enable_expired_license_requires_days_and_reactivates(
     client: TestClient, db_path: str
 ) -> None:

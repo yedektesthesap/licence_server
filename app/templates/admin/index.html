@@ -15,13 +15,7 @@
         <p>Token TTL: <strong>{{ token_ttl_seconds }}</strong> sec</p>
         <p class="mono">DB: {{ db_path }}</p>
       </header>
-
-      {% if message %}
-      <section class="notice notice-success">{{ message }}</section>
-      {% endif %}
-      {% if error %}
-      <section class="notice notice-error">{{ error }}</section>
-      {% endif %}
+      <div id="toast-stack" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
 
       <section class="panel panel-create">
         <h2>Create License</h2>
@@ -87,18 +81,25 @@
                       <button type="submit" class="danger">Disable</button>
                     </form>
                     {% else %}
-                    <form method="post" action="{{ item.enable_action }}" class="action-form">
+                    <form
+                      method="post"
+                      action="{{ item.enable_action }}"
+                      class="action-form"
+                      data-requires-duration="{{ 1 if item.requires_duration else 0 }}"
+                      data-days-selected="0"
+                    >
                       {% if item.requires_duration %}
-                      <input
-                        type="number"
-                        name="days"
-                        min="1"
-                        value="{{ item.duration_days }}"
-                        required
-                        class="duration-input"
-                        title="Renew duration (days)"
-                      />
-                      <span class="duration-suffix">days</span>
+                      <span class="duration-picker" hidden>
+                        <input
+                          type="number"
+                          name="days"
+                          min="1"
+                          value="{{ item.duration_days }}"
+                          class="duration-input"
+                          title="Renew duration (days)"
+                        />
+                        <span class="duration-suffix">days</span>
+                      </span>
                       {% endif %}
                       <button type="submit" class="success">Enable</button>
                     </form>
@@ -121,7 +122,43 @@
       const refreshIntervalMs = 1000;
       const licensesTableBody = document.getElementById("licenses-tbody");
       const licensesTotal = document.getElementById("licenses-total");
+      const toastStack = document.getElementById("toast-stack");
+      const initialMessage = {{ message|tojson }};
+      const initialError = {{ error|tojson }};
       let refreshInFlight = false;
+
+      function showToast(text, variant) {
+        if (!text || !toastStack) {
+          return;
+        }
+
+        const toast = document.createElement("div");
+        toast.className = `toast toast-${variant}`;
+
+        const body = document.createElement("div");
+        body.className = "toast-body";
+        body.textContent = text;
+        toast.appendChild(body);
+
+        const closeButton = document.createElement("button");
+        closeButton.type = "button";
+        closeButton.className = "toast-close";
+        closeButton.setAttribute("aria-label", "Close notification");
+        closeButton.textContent = "x";
+        closeButton.addEventListener("click", () => {
+          toast.classList.remove("show");
+          window.setTimeout(() => toast.remove(), 200);
+        });
+        toast.appendChild(closeButton);
+
+        toastStack.appendChild(toast);
+        requestAnimationFrame(() => toast.classList.add("show"));
+
+        window.setTimeout(() => {
+          toast.classList.remove("show");
+          window.setTimeout(() => toast.remove(), 200);
+        }, 4200);
+      }
 
       function createCell(textValue, className = "") {
         const cell = document.createElement("td");
@@ -147,21 +184,27 @@
           form.appendChild(button);
         } else {
           form.action = item.enable_action;
+          form.dataset.requiresDuration = item.requires_duration ? "1" : "0";
+          form.dataset.daysSelected = "0";
           if (item.requires_duration) {
+            const durationPicker = document.createElement("span");
+            durationPicker.className = "duration-picker";
+            durationPicker.hidden = true;
+
             const daysInput = document.createElement("input");
             daysInput.type = "number";
             daysInput.name = "days";
             daysInput.min = "1";
             daysInput.value = String(item.duration_days);
-            daysInput.required = true;
             daysInput.className = "duration-input";
             daysInput.title = "Renew duration (days)";
-            form.appendChild(daysInput);
+            durationPicker.appendChild(daysInput);
 
             const suffix = document.createElement("span");
             suffix.className = "duration-suffix";
             suffix.textContent = "days";
-            form.appendChild(suffix);
+            durationPicker.appendChild(suffix);
+            form.appendChild(durationPicker);
           }
 
           const button = document.createElement("button");
@@ -215,6 +258,83 @@
         return row;
       }
 
+      function openDurationPicker(form) {
+        const picker = form.querySelector(".duration-picker");
+        const daysInput = form.querySelector("input[name='days']");
+        if (!picker || !daysInput) {
+          return;
+        }
+
+        picker.hidden = false;
+        form.classList.add("duration-open");
+        daysInput.focus();
+        daysInput.select();
+      }
+
+      function closeDurationPicker(form) {
+        const picker = form.querySelector(".duration-picker");
+        if (!picker) {
+          return;
+        }
+
+        picker.hidden = true;
+        form.classList.remove("duration-open");
+      }
+
+      function normalizeDurationValue(form) {
+        const daysInput = form.querySelector("input[name='days']");
+        if (!daysInput) {
+          return null;
+        }
+
+        const parsed = Number.parseInt(daysInput.value, 10);
+        if (!Number.isFinite(parsed) || parsed < 1) {
+          return null;
+        }
+
+        daysInput.value = String(parsed);
+        return parsed;
+      }
+
+      licensesTableBody.addEventListener("submit", (event) => {
+        const form = event.target;
+        if (!(form instanceof HTMLFormElement)) {
+          return;
+        }
+        if (form.dataset.requiresDuration !== "1") {
+          return;
+        }
+
+        const selectedDays = normalizeDurationValue(form);
+        if (form.dataset.daysSelected === "1" && selectedDays !== null) {
+          return;
+        }
+
+        event.preventDefault();
+        openDurationPicker(form);
+      });
+
+      licensesTableBody.addEventListener("change", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement) || target.name !== "days") {
+          return;
+        }
+
+        const form = target.form;
+        if (!(form instanceof HTMLFormElement) || form.dataset.requiresDuration !== "1") {
+          return;
+        }
+
+        const selectedDays = normalizeDurationValue(form);
+        if (selectedDays === null) {
+          return;
+        }
+
+        form.dataset.daysSelected = "1";
+        closeDurationPicker(form);
+        form.requestSubmit();
+      });
+
       async function refreshLicenses() {
         if (refreshInFlight) {
           return;
@@ -253,6 +373,8 @@
         }
       }
 
+      showToast(initialMessage, "success");
+      showToast(initialError, "error");
       window.setInterval(refreshLicenses, refreshIntervalMs);
     </script>
   </body>
