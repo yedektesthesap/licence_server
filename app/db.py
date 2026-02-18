@@ -83,6 +83,21 @@ def enable_license(db_path: str, key: str) -> bool:
     return _set_license_status(db_path, key, "active")
 
 
+def reactivate_license(db_path: str, key: str, *, issued_at: str, duration_days: int) -> bool:
+    with connect(db_path) as conn:
+        cursor = conn.execute(
+            """
+            UPDATE licenses
+            SET issued_at = ?, duration_days = ?, status = 'active'
+            WHERE license_key = ?
+            """,
+            (issued_at, duration_days, key),
+        )
+        conn.commit()
+
+    return cursor.rowcount > 0
+
+
 def _set_license_status(db_path: str, key: str, status: str) -> bool:
     with connect(db_path) as conn:
         cursor = conn.execute(

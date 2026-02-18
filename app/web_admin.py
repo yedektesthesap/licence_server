@@ -4,16 +4,17 @@ import secrets
 import sqlite3
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 
-from app.db import disable_license, enable_license, init_db, list_licenses
+from app.db import disable_license, enable_license, get_license, init_db, list_licenses, reactivate_license
 from app.license_admin import create_license, format_license, generate_unique_key
-from app.service import format_remaining_time, parse_rfc3339, split_remaining_time, utc_now
+from app.service import format_remaining_time, parse_rfc3339, split_remaining_time, to_rfc3339, utc_now
 from app.settings import get_settings
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -62,6 +63,34 @@ def _redirect_to_dashboard(
     return RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
 
 
+def _build_license_rows(request: Request, db_path: str) -> list[dict[str, Any]]:
+    now = utc_now()
+    rows = []
+
+    for record in list_licenses(db_path):
+        payload = format_license(record)
+        expires_at = parse_rfc3339(payload["license_expires_at"])
+        remaining_time = split_remaining_time(now, expires_at)
+        is_expired = now >= expires_at
+        is_effectively_disabled = record.status == "disabled" or is_expired
+
+        payload["remaining_time"] = remaining_time
+        payload["remaining_time_label"] = format_remaining_time(remaining_time)
+        payload["is_expired"] = is_expired
+        payload["display_status"] = "disabled" if is_effectively_disabled else "active"
+        payload["action_mode"] = "enable" if is_effectively_disabled else "disable"
+        payload["requires_duration"] = is_expired
+        payload["disable_action"] = str(
+            request.url_for("admin_disable_license", license_key=record.license_key)
+        )
+        payload["enable_action"] = str(
+            request.url_for("admin_enable_license", license_key=record.license_key)
+        )
+        rows.append(payload)
+
+    return rows
+
+
 @router.get("", response_class=HTMLResponse, name="admin_dashboard")
 def dashboard(
     request: Request,
@@ -72,23 +101,7 @@ def dashboard(
 ) -> HTMLResponse:
     settings = get_settings()
     init_db(settings.db_path)
-    now = utc_now()
-
-    rows = []
-    for record in list_licenses(settings.db_path):
-        payload = format_license(record)
-        expires_at = parse_rfc3339(payload["license_expires_at"])
-        remaining_time = split_remaining_time(now, expires_at)
-        payload["remaining_time"] = remaining_time
-        payload["remaining_time_label"] = format_remaining_time(remaining_time)
-        payload["is_expired"] = now >= expires_at
-        payload["disable_action"] = str(
-            request.url_for("admin_disable_license", license_key=record.license_key)
-        )
-        payload["enable_action"] = str(
-            request.url_for("admin_enable_license", license_key=record.license_key)
-        )
-        rows.append(payload)
+    rows = _build_license_rows(request, settings.db_path)
 
     return templates.TemplateResponse(
         request=request,
@@ -104,6 +117,17 @@ def dashboard(
             "db_path": settings.db_path,
         },
     )
+
+
+@router.get("/licenses", name="admin_list_licenses")
+def list_licenses_view(
+    request: Request,
+    _: str = Depends(_require_admin),
+) -> dict[str, Any]:
+    settings = get_settings()
+    init_db(settings.db_path)
+    rows = _build_license_rows(request, settings.db_path)
+    return {"licenses": rows, "total": len(rows)}
 
 
 @router.post("/licenses", name="admin_create_license")
@@ -164,10 +188,48 @@ def disable_license_view(
 def enable_license_view(
     request: Request,
     license_key: str,
+    days: str | None = Form(default=None),
     _: str = Depends(_require_admin),
 ) -> RedirectResponse:
     settings = get_settings()
     init_db(settings.db_path)
+
+    record = get_license(settings.db_path, license_key)
+    if record is None:
+        return _redirect_to_dashboard(request, error=f"License key not found: {license_key}")
+
+    now = utc_now()
+    issued_at = parse_rfc3339(record.issued_at)
+    is_expired = now >= issued_at + timedelta(days=record.duration_days)
+
+    if is_expired:
+        days_raw = (days or "").strip()
+        if not days_raw:
+            return _redirect_to_dashboard(
+                request,
+                error=f"License is expired. Select a duration (days) before enabling: {license_key}",
+            )
+
+        try:
+            duration_days = int(days_raw)
+        except ValueError:
+            return _redirect_to_dashboard(request, error="Days must be an integer.")
+
+        if duration_days < 1:
+            return _redirect_to_dashboard(request, error="Days must be >= 1.")
+
+        if not reactivate_license(
+            settings.db_path,
+            license_key,
+            issued_at=to_rfc3339(now),
+            duration_days=duration_days,
+        ):
+            return _redirect_to_dashboard(request, error=f"License key not found: {license_key}")
+
+        return _redirect_to_dashboard(
+            request,
+            message=f"License reactivated for {duration_days} day(s): {license_key}",
+        )
 
     if not enable_license(settings.db_path, license_key):
         return _redirect_to_dashboard(request, error=f"License key not found: {license_key}")

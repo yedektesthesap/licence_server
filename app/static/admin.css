@@ -171,6 +171,27 @@ button.secondary {
   background: linear-gradient(135deg, #e2edf9, #cddff2);
 }
 
+.action-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.action-form button {
+  padding: 8px 12px;
+}
+
+.duration-input {
+  width: 84px;
+  padding: 7px 8px;
+}
+
+.duration-suffix {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
 .panel-title {
   display: flex;
   justify-content: space-between;
