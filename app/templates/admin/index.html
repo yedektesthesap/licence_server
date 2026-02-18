@@ -281,12 +281,23 @@
 
           cell.dataset.defaultDays = String(days);
           showToast(data.message || `Remaining time updated: ${licenseKey}`, "success");
-          await refreshLicenses();
           return true;
         } catch (_) {
           showToast("Remaining time update failed.", "error");
           return false;
         }
+      }
+
+      function closeRemainingEditor(cell) {
+        const form = cell.querySelector(".remaining-edit-form");
+        const trigger = cell.querySelector(".remaining-time-trigger");
+        if (form) {
+          form.remove();
+        }
+        if (trigger instanceof HTMLButtonElement) {
+          trigger.hidden = false;
+        }
+        cell.dataset.editing = "0";
       }
 
       function openRemainingEditor(cell) {
@@ -331,8 +342,16 @@
             return;
           }
 
+          input.disabled = true;
           const ok = await saveRemainingDays(cell, days);
-          if (!ok) {
+          if (ok) {
+            closeRemainingEditor(cell);
+            await refreshLicenses(true);
+            return;
+          }
+
+          input.disabled = false;
+          if (cell.dataset.editing === "1") {
             input.focus();
             input.select();
           }
@@ -344,9 +363,7 @@
           }
 
           event.preventDefault();
-          form.remove();
-          trigger.hidden = false;
-          cell.dataset.editing = "0";
+          closeRemainingEditor(cell);
         });
 
         cell.appendChild(form);
@@ -386,11 +403,11 @@
         openRemainingEditor(cell);
       });
 
-      async function refreshLicenses() {
+      async function refreshLicenses(force = false) {
         if (refreshInFlight) {
           return;
         }
-        if (licensesTableBody.contains(document.activeElement)) {
+        if (!force && licensesTableBody.contains(document.activeElement)) {
           return;
         }
         refreshInFlight = true;
